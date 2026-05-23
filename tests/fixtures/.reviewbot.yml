@@ -1,0 +1,21 @@
+provider:
+  name: claude
+  model: claude-sonnet-4-6
+
+reviewers:
+  security:
+    enabled: true
+    severity_threshold: warning
+    owasp_categories:
+      - injection
+      - auth
+  quality:
+    enabled: true
+    checks:
+      - naming
+      - complexity
+
+ignore:
+  paths:
+    - "*.test.rs"
+  max_file_size_kb: 500
