@@ -91,7 +91,10 @@ mod tests {
     }
     #[test]
     fn test_language_unknown() {
-        assert_eq!(Language::from_extension("xyz"), Language::Unknown("xyz".to_string()));
+        assert_eq!(
+            Language::from_extension("xyz"),
+            Language::Unknown("xyz".to_string())
+        );
     }
     #[test]
     fn test_severity_ordering() {

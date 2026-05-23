@@ -1,10 +1,11 @@
+pub mod common;
 pub mod context;
 pub mod quality;
 pub mod security;
 
 pub use context::{
-    Category, DiffHunk, DiffLine, DiffLineKind, Language,
-    RepoInfo, ReviewComment, ReviewContext, Severity,
+    Category, DiffHunk, DiffLine, DiffLineKind, Language, RepoInfo, ReviewComment, ReviewContext,
+    Severity,
 };
 pub use quality::QualityReviewer;
 pub use security::{Reviewer, SecurityReviewer};
@@ -49,15 +50,18 @@ mod tests {
     fn make_ctx() -> ReviewContext {
         ReviewContext {
             repo: RepoInfo {
-                owner: "test".into(), name: "repo".into(),
-                pr_number: 1, commit_sha: "abc".into(),
+                owner: "test".into(),
+                name: "repo".into(),
+                pr_number: 1,
+                commit_sha: "abc".into(),
             },
             file_path: "src/main.rs".into(),
             language: Language::Rust,
             diff_hunks: vec![DiffHunk {
                 start_line: 1,
                 lines: vec![DiffLine {
-                    number: 1, kind: DiffLineKind::Added,
+                    number: 1,
+                    kind: DiffLineKind::Added,
                     content: "let x = 1;".into(),
                 }],
             }],
@@ -68,10 +72,10 @@ mod tests {
     async fn test_engine_combines_security_and_quality() {
         let engine = ReviewEngine::new(
             Box::new(SecurityReviewer::new(MockLlmProvider::new(
-                r#"[{"line":1,"severity":"critical","category":"security","body":"issue"}]"#
+                r#"[{"line":1,"severity":"critical","category":"security","body":"issue"}]"#,
             ))),
             Box::new(QualityReviewer::new(MockLlmProvider::new(
-                r#"[{"line":1,"severity":"warning","category":"quality","body":"naming issue"}]"#
+                r#"[{"line":1,"severity":"warning","category":"quality","body":"naming issue"}]"#,
             ))),
         );
         let comments = engine.run(&make_ctx()).await.unwrap();
@@ -82,9 +86,11 @@ mod tests {
     async fn test_engine_continues_on_partial_failure() {
         let engine = ReviewEngine::new(
             Box::new(SecurityReviewer::new(MockLlmProvider::new(
-                r#"[{"line":1,"severity":"critical","category":"security","body":"issue"}]"#
+                r#"[{"line":1,"severity":"critical","category":"security","body":"issue"}]"#,
             ))),
-            Box::new(QualityReviewer::new(MockLlmProvider::new("not valid json {{{{"))),
+            Box::new(QualityReviewer::new(MockLlmProvider::new(
+                "not valid json {{{{",
+            ))),
         );
         let comments = engine.run(&make_ctx()).await.unwrap();
         assert_eq!(comments.len(), 1);
