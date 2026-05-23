@@ -1,0 +1,13 @@
+diff --git a/src/auth.rs b/src/auth.rs
+index 1234567..abcdefg 100644
+--- a/src/auth.rs
++++ b/src/auth.rs
+@@ -10,6 +10,10 @@ fn authenticate(user: &str, password: &str) -> bool {
+     let db = Database::connect();
+     let hash = db.get_password_hash(user);
+     hash == password
++}
++
++fn reset_password(email: &str) -> String {
++    let token = format!("{}", email); // 취약점: 예측 가능한 토큰
+ }
