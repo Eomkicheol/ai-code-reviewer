@@ -6,3 +6,5 @@ pub use context::{
     Category, DiffHunk, DiffLine, DiffLineKind, Language,
     RepoInfo, ReviewComment, ReviewContext, Severity,
 };
+pub use security::{Reviewer, SecurityReviewer};
+pub use quality::QualityReviewer;
