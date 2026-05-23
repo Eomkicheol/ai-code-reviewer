@@ -5,6 +5,15 @@ use crate::{
     review::context::{Language, RepoInfo, ReviewContext},
 };
 
+/// raw diff 문자열을 파싱해서 ReviewContext 목록으로 변환한다 (테스트/직접 호출용 공개 함수).
+pub fn parse_into_contexts(
+    raw_diff: &str,
+    repo: &RepoInfo,
+    config: &ReviewConfig,
+) -> crate::error::Result<Vec<ReviewContext>> {
+    Ok(parse_diff_to_contexts(raw_diff, repo, config))
+}
+
 /// PR diff를 가져와서 파일별 ReviewContext 목록으로 변환한다.
 pub async fn fetch_review_contexts(
     client: &GithubClient,
@@ -89,5 +98,9 @@ fn detect_language(path: &str) -> Language {
 }
 
 fn should_ignore(path: &str, config: &ReviewConfig) -> bool {
-    config.ignore.paths.iter().any(|pattern| path.contains(pattern.as_str()))
+    config
+        .ignore
+        .paths
+        .iter()
+        .any(|pattern| path.contains(pattern.as_str()))
 }
