@@ -12,6 +12,9 @@ pub enum Language {
     TypeScript,
     Python,
     Go,
+    Kotlin,
+    Swift,
+    Svelte,
     Unknown(String),
 }
 
@@ -22,6 +25,9 @@ impl Language {
             "ts" | "tsx" => Language::TypeScript,
             "py" => Language::Python,
             "go" => Language::Go,
+            "kt" | "kts" => Language::Kotlin,
+            "swift" => Language::Swift,
+            "svelte" => Language::Svelte,
             other => Language::Unknown(other.to_string()),
         }
     }
@@ -88,6 +94,19 @@ mod tests {
     #[test]
     fn test_language_from_ts_extension() {
         assert_eq!(Language::from_extension("ts"), Language::TypeScript);
+    }
+    #[test]
+    fn test_language_from_kt_extension() {
+        assert_eq!(Language::from_extension("kt"), Language::Kotlin);
+        assert_eq!(Language::from_extension("kts"), Language::Kotlin);
+    }
+    #[test]
+    fn test_language_from_swift_extension() {
+        assert_eq!(Language::from_extension("swift"), Language::Swift);
+    }
+    #[test]
+    fn test_language_from_svelte_extension() {
+        assert_eq!(Language::from_extension("svelte"), Language::Svelte);
     }
     #[test]
     fn test_language_unknown() {
