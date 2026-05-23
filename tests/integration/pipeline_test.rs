@@ -8,6 +8,7 @@ use tower::ServiceExt;
 #[tokio::test]
 async fn test_webhook_signature_security_valid() {
     std::env::set_var("GITHUB_WEBHOOK_SECRET", "integration-test-secret");
+    std::env::set_var("GITHUB_TOKEN", "test-token");
 
     let app = reviewer::webhook::router();
     let body = include_bytes!("../fixtures/pr_event.json");
@@ -35,6 +36,7 @@ async fn test_webhook_signature_security_valid() {
 #[tokio::test]
 async fn test_webhook_forged_signature_rejected() {
     std::env::set_var("GITHUB_WEBHOOK_SECRET", "integration-test-secret");
+    std::env::set_var("GITHUB_TOKEN", "test-token");
 
     let app = reviewer::webhook::router();
     let body = include_bytes!("../fixtures/pr_event.json");
@@ -129,6 +131,7 @@ async fn test_review_engine_end_to_end_with_mock_llm() {
                 content: "let password = \"hardcoded123\";".into(),
             }],
         }],
+        dep_snippets: vec![],
     };
 
     let security_llm = MockLlmProvider::new(

@@ -1,13 +1,13 @@
+use crate::error::{Result, ReviewerError};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use crate::error::{Result, ReviewerError};
 
 type HmacSha256 = Hmac<Sha256>;
 
 /// body에 대한 HMAC-SHA256 hex 문자열 반환 (테스트용 공개)
 pub fn compute_signature(body: &[u8], secret: &str) -> String {
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .expect("HMAC accepts any key length");
+    let mut mac =
+        HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key length");
     mac.update(body);
     hex::encode(mac.finalize().into_bytes())
 }
@@ -35,7 +35,11 @@ pub fn verify_signature(body: &[u8], header: &str, secret: &str) -> Result<()> {
         .fold(0u8, |acc, (a, b)| acc | (a ^ b))
         == 0;
 
-    if valid { Ok(()) } else { Err(ReviewerError::InvalidSignature) }
+    if valid {
+        Ok(())
+    } else {
+        Err(ReviewerError::InvalidSignature)
+    }
 }
 
 #[cfg(test)]

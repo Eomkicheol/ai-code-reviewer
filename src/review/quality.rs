@@ -4,7 +4,7 @@ use crate::{
     error::Result,
     llm::LlmProvider,
     review::{
-        common::{extract_code, parse_llm_response},
+        common::{format_context_for_prompt, llm_review},
         context::{ReviewComment, ReviewContext},
         security::Reviewer,
     },
@@ -20,10 +20,11 @@ impl<P: LlmProvider> QualityReviewer<P> {
     }
 
     fn build_prompt(&self, ctx: &ReviewContext) -> String {
-        let code = extract_code(ctx);
+        let code = format_context_for_prompt(ctx);
         format!(
             r#"You are a code quality reviewer. Analyze ONLY the code inside the <code> tags.
 Focus on: naming conventions, function complexity, code duplication, architecture patterns.
+Consider how the changed code fits within the related files shown for context.
 
 File: {path}
 Language: {lang:?}
@@ -49,8 +50,7 @@ impl<P: LlmProvider> Reviewer for QualityReviewer<P> {
     }
 
     async fn review(&self, ctx: &ReviewContext) -> Result<Vec<ReviewComment>> {
-        let raw = self.llm.complete(&self.build_prompt(ctx)).await?;
-        parse_llm_response(&raw, &ctx.file_path)
+        llm_review(&self.llm, self.build_prompt(ctx), &ctx.file_path).await
     }
 }
 
@@ -59,7 +59,9 @@ mod tests {
     use super::*;
     use crate::{
         llm::MockLlmProvider,
-        review::context::{Category, DiffHunk, DiffLine, DiffLineKind, Language, RepoInfo, ReviewContext},
+        review::context::{
+            Category, DiffHunk, DiffLine, DiffLineKind, Language, RepoInfo, ReviewContext,
+        },
     };
 
     fn make_context() -> ReviewContext {
@@ -80,6 +82,7 @@ mod tests {
                     content: "fn a() { let x = 1; let y = 2; }".into(),
                 }],
             }],
+            dep_snippets: vec![],
         }
     }
 

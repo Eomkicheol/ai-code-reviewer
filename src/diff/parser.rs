@@ -34,12 +34,17 @@ pub fn parse_diff(diff: &str) -> Result<Vec<DiffHunk>> {
                     raw_line.get(1..).unwrap_or(raw_line).to_string(),
                 )
             };
+            // Removed 라인은 새 파일에 존재하지 않으므로 번호를 증가시키지 않는다.
+            // Added/Context 라인만 새 파일의 줄 번호를 점유한다.
+            let advances = !matches!(kind, DiffLineKind::Removed);
             hunk.lines.push(DiffLine {
                 number: current_line,
                 kind,
                 content,
             });
-            current_line += 1;
+            if advances {
+                current_line += 1;
+            }
         }
     }
 
@@ -102,5 +107,48 @@ mod tests {
     fn test_empty_diff_returns_empty() {
         let hunks = parse_diff("").unwrap();
         assert!(hunks.is_empty());
+    }
+
+    #[test]
+    fn test_removed_line_does_not_advance_counter() {
+        // @@ +1,2 @@ → 새 파일에는 2줄(context + context), removed는 없음
+        let diff = "\
+@@ -1,3 +1,2 @@
+ context_before
+-removed_line
+ context_after";
+        let hunks = parse_diff(diff).unwrap();
+        let lines = &hunks[0].lines;
+
+        let after = lines.iter().find(|l| l.content == "context_after").unwrap();
+        // removed_line이 카운터를 소모했다면 after.number == 3이 됨 (버그)
+        assert_eq!(
+            after.number, 2,
+            "removed line must not advance the new-file line counter"
+        );
+    }
+
+    #[test]
+    fn test_added_and_context_lines_get_correct_numbers() {
+        let diff = "\
+@@ -5,4 +5,5 @@
+ line5
++new_line
+ line6
+-old_line
+ line7";
+        let hunks = parse_diff(diff).unwrap();
+        let lines = &hunks[0].lines;
+
+        let line5 = lines.iter().find(|l| l.content == "line5").unwrap();
+        let new_line = lines.iter().find(|l| l.content == "new_line").unwrap();
+        let line6 = lines.iter().find(|l| l.content == "line6").unwrap();
+        let line7 = lines.iter().find(|l| l.content == "line7").unwrap();
+
+        assert_eq!(line5.number, 5);
+        assert_eq!(new_line.number, 6);
+        assert_eq!(line6.number, 7);
+        // old_line은 카운터를 소모하지 않으므로 line7은 8이 됨
+        assert_eq!(line7.number, 8);
     }
 }

@@ -25,7 +25,8 @@ impl GithubClient {
     pub async fn get_pr_diff(&self, owner: &str, repo: &str, pr_number: u64) -> Result<String> {
         let url = format!("{}/repos/{owner}/{repo}/pulls/{pr_number}", self.base_url);
 
-        let resp = self.client
+        let resp = self
+            .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.token))
             .header("Accept", "application/vnd.github.v3.diff")
@@ -39,23 +40,31 @@ impl GithubClient {
             return Err(ReviewerError::GithubApi(format!("GET PR diff {status}")));
         }
 
-        resp.text().await.map_err(|e| ReviewerError::GithubApi(e.to_string()))
+        resp.text()
+            .await
+            .map_err(|e| ReviewerError::GithubApi(e.to_string()))
     }
 
     pub async fn get_file_content(&self, owner: &str, repo: &str, path: &str) -> Result<String> {
-        // SSRF 방지: github.com 또는 localhost만 허용
+        // SSRF 방지: base_url은 github.com 또는 localhost만 허용
         if !self.base_url.contains("github.com")
             && !self.base_url.starts_with("http://127.0.0.1")
             && !self.base_url.starts_with("http://localhost")
         {
             return Err(ReviewerError::GithubApi(
-                "non-github URL rejected (SSRF prevention)".into()
+                "non-github URL rejected (SSRF prevention)".into(),
             ));
+        }
+
+        // 경로 트래버설 차단: "../" 또는 절대경로 포함 금지
+        if path.contains("..") || path.starts_with('/') {
+            return Err(ReviewerError::GithubApi("path traversal rejected".into()));
         }
 
         let url = format!("{}/repos/{owner}/{repo}/contents/{path}", self.base_url);
 
-        let resp = self.client
+        let resp = self
+            .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.token))
             .header("Accept", "application/vnd.github.raw+json")
@@ -68,6 +77,8 @@ impl GithubClient {
             return Ok(String::new());
         }
 
-        resp.text().await.map_err(|e| ReviewerError::GithubApi(e.to_string()))
+        resp.text()
+            .await
+            .map_err(|e| ReviewerError::GithubApi(e.to_string()))
     }
 }

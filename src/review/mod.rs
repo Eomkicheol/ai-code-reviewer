@@ -2,6 +2,7 @@ pub mod common;
 pub mod context;
 pub mod quality;
 pub mod security;
+pub mod summary;
 
 pub use context::{
     Category, DiffHunk, DiffLine, DiffLineKind, Language, RepoInfo, ReviewComment, ReviewContext,
@@ -65,6 +66,7 @@ mod tests {
                     content: "let x = 1;".into(),
                 }],
             }],
+            dep_snippets: vec![],
         }
     }
 

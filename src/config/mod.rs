@@ -49,13 +49,19 @@ impl Default for SecurityReviewerConfig {
 pub struct QualityReviewerConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default = "default_warning")]
+    pub severity_threshold: String,
     #[serde(default = "default_checks")]
     pub checks: Vec<String>,
 }
 
 impl Default for QualityReviewerConfig {
     fn default() -> Self {
-        Self { enabled: true, checks: default_checks() }
+        Self {
+            enabled: true,
+            severity_threshold: "warning".to_string(),
+            checks: default_checks(),
+        }
     }
 }
 
@@ -69,16 +75,30 @@ pub struct IgnoreConfig {
 
 impl Default for IgnoreConfig {
     fn default() -> Self {
-        Self { paths: vec![], max_file_size_kb: 500 }
+        Self {
+            paths: vec![],
+            max_file_size_kb: 500,
+        }
     }
 }
 
-fn default_true() -> bool { true }
-fn default_warning() -> String { "warning".to_string() }
+fn default_true() -> bool {
+    true
+}
+fn default_warning() -> String {
+    "warning".to_string()
+}
 fn default_owasp() -> Vec<String> {
-    vec!["injection".into(), "auth".into(), "crypto".into(), "secrets".into()]
+    vec![
+        "injection".into(),
+        "auth".into(),
+        "crypto".into(),
+        "secrets".into(),
+    ]
 }
 fn default_checks() -> Vec<String> {
     vec!["naming".into(), "complexity".into(), "duplication".into()]
 }
-fn default_max_file_size() -> u64 { 500 }
+fn default_max_file_size() -> u64 {
+    500
+}

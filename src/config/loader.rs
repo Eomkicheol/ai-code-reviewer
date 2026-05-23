@@ -1,4 +1,7 @@
-use crate::{config::ReviewConfig, error::{Result, ReviewerError}};
+use crate::{
+    config::ReviewConfig,
+    error::{Result, ReviewerError},
+};
 
 pub fn parse_config(yaml: &str) -> Result<ReviewConfig> {
     if yaml.trim().is_empty() {
@@ -11,8 +14,7 @@ pub fn parse_config(yaml: &str) -> Result<ReviewConfig> {
             ignore: Default::default(),
         });
     }
-    serde_yaml::from_str(yaml)
-        .map_err(|e| ReviewerError::Config(e.to_string()))
+    serde_yaml::from_str(yaml).map_err(|e| ReviewerError::Config(e.to_string()))
 }
 
 pub async fn load_config_from_repo(
@@ -20,10 +22,9 @@ pub async fn load_config_from_repo(
     owner: &str,
     repo: &str,
     token: &str,
+    base_url: &str,
 ) -> Result<ReviewConfig> {
-    let url = format!(
-        "https://api.github.com/repos/{owner}/{repo}/contents/.reviewbot.yml"
-    );
+    let url = format!("{base_url}/repos/{owner}/{repo}/contents/.reviewbot.yml");
     let resp = client
         .get(&url)
         .header("Authorization", format!("Bearer {token}"))
@@ -37,7 +38,9 @@ pub async fn load_config_from_repo(
         return parse_config("");
     }
 
-    let text = resp.text().await
+    let text = resp
+        .text()
+        .await
         .map_err(|e| ReviewerError::GithubApi(e.to_string()))?;
     parse_config(&text)
 }

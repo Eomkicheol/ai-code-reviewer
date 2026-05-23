@@ -1,6 +1,9 @@
+use crate::{
+    error::{Result, ReviewerError},
+    llm::LlmProvider,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use crate::{error::{Result, ReviewerError}, llm::LlmProvider};
 
 pub struct GeminiProvider {
     api_key: String,
@@ -23,7 +26,8 @@ impl GeminiProvider {
         Self::new(
             std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY not set"),
             model,
-            "https://generativelanguage.googleapis.com",
+            &std::env::var("GEMINI_BASE_URL")
+                .unwrap_or_else(|_| "https://generativelanguage.googleapis.com".to_string()),
         )
     }
 }
@@ -76,7 +80,8 @@ impl LlmProvider for GeminiProvider {
             }],
         };
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&body)
@@ -90,14 +95,20 @@ impl LlmProvider for GeminiProvider {
             return Err(ReviewerError::Llm(format!("Gemini API {status}: {text}")));
         }
 
-        let data: GeminiResponse = resp.json().await
+        let data: GeminiResponse = resp
+            .json()
+            .await
             .map_err(|e| ReviewerError::Llm(e.to_string()))?;
 
-        data.candidates.into_iter().next()
+        data.candidates
+            .into_iter()
+            .next()
             .and_then(|c| c.content.parts.into_iter().next())
             .map(|p| p.text)
             .ok_or_else(|| ReviewerError::Llm("no content in Gemini response".into()))
     }
 
-    fn model_name(&self) -> &str { &self.model }
+    fn model_name(&self) -> &str {
+        &self.model
+    }
 }

@@ -15,11 +15,15 @@ RUN touch src/main.rs src/lib.rs && cargo build --release
 # 런타임 이미지 (최소화)
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/reviewer /usr/local/bin/reviewer
 
 EXPOSE 3000
+
+# SQLite DB 영속화 볼륨 (-v /host/data:/data 또는 named volume)
+VOLUME ["/data"]
+ENV DB_PATH=/data/reviewer.db
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1

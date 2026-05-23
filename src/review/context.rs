@@ -77,11 +77,18 @@ pub struct ReviewComment {
 }
 
 #[derive(Debug, Clone)]
+pub struct DepSnippet {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct ReviewContext {
     pub repo: RepoInfo,
     pub file_path: String,
     pub language: Language,
     pub diff_hunks: Vec<DiffHunk>,
+    pub dep_snippets: Vec<DepSnippet>, // import로 참조된 의존 파일 스니펫
 }
 
 #[cfg(test)]

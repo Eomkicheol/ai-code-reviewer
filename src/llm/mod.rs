@@ -2,8 +2,8 @@ pub mod claude;
 pub mod gemini;
 pub mod openai;
 
-use async_trait::async_trait;
 use crate::error::Result;
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
@@ -11,14 +11,15 @@ pub trait LlmProvider: Send + Sync {
     fn model_name(&self) -> &str;
 }
 
-/// 테스트 전용 Mock 구현
 pub struct MockLlmProvider {
     response: String,
 }
 
 impl MockLlmProvider {
     pub fn new(response: impl Into<String>) -> Self {
-        Self { response: response.into() }
+        Self {
+            response: response.into(),
+        }
     }
 }
 

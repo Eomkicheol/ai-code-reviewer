@@ -1,6 +1,9 @@
+use crate::{
+    error::{Result, ReviewerError},
+    llm::LlmProvider,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use crate::{error::{Result, ReviewerError}, llm::LlmProvider};
 
 pub struct OpenAiProvider {
     api_key: String,
@@ -23,7 +26,8 @@ impl OpenAiProvider {
         Self::new(
             std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"),
             model,
-            "https://api.openai.com",
+            &std::env::var("OPENAI_BASE_URL")
+                .unwrap_or_else(|_| "https://api.openai.com".to_string()),
         )
     }
 }
@@ -63,10 +67,14 @@ impl LlmProvider for OpenAiProvider {
         let body = OpenAiRequest {
             model: &self.model,
             max_tokens: 2048,
-            messages: vec![OpenAiMessage { role: "user", content: prompt }],
+            messages: vec![OpenAiMessage {
+                role: "user",
+                content: prompt,
+            }],
         };
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -81,13 +89,19 @@ impl LlmProvider for OpenAiProvider {
             return Err(ReviewerError::Llm(format!("OpenAI API {status}: {text}")));
         }
 
-        let data: OpenAiResponse = resp.json().await
+        let data: OpenAiResponse = resp
+            .json()
+            .await
             .map_err(|e| ReviewerError::Llm(e.to_string()))?;
 
-        data.choices.into_iter().next()
+        data.choices
+            .into_iter()
+            .next()
             .map(|c| c.message.content)
             .ok_or_else(|| ReviewerError::Llm("no choices in response".into()))
     }
 
-    fn model_name(&self) -> &str { &self.model }
+    fn model_name(&self) -> &str {
+        &self.model
+    }
 }

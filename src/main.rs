@@ -7,7 +7,12 @@ async fn main() {
         .init();
 
     let app = reviewer::webhook::router();
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    tracing::info!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+        .await
+        .expect("failed to bind TCP listener on :3000");
+    tracing::info!(
+        "listening on {}",
+        listener.local_addr().expect("no local addr")
+    );
+    axum::serve(listener, app).await.expect("server error");
 }

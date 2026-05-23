@@ -1,6 +1,9 @@
+use crate::{
+    error::{Result, ReviewerError},
+    llm::LlmProvider,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use crate::{error::{Result, ReviewerError}, llm::LlmProvider};
 
 pub struct ClaudeProvider {
     api_key: String,
@@ -23,7 +26,8 @@ impl ClaudeProvider {
         Self::new(
             std::env::var("CLAUDE_API_KEY").expect("CLAUDE_API_KEY not set"),
             model,
-            "https://api.anthropic.com",
+            &std::env::var("CLAUDE_BASE_URL")
+                .unwrap_or_else(|_| "https://api.anthropic.com".to_string()),
         )
     }
 }
@@ -60,10 +64,14 @@ impl LlmProvider for ClaudeProvider {
         let body = ClaudeRequest {
             model: &self.model,
             max_tokens: 2048,
-            messages: vec![ClaudeMessage { role: "user", content: prompt }],
+            messages: vec![ClaudeMessage {
+                role: "user",
+                content: prompt,
+            }],
         };
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
@@ -79,22 +87,30 @@ impl LlmProvider for ClaudeProvider {
             return Err(ReviewerError::Llm(format!("Claude API {status}: {text}")));
         }
 
-        let data: ClaudeResponse = resp.json().await
+        let data: ClaudeResponse = resp
+            .json()
+            .await
             .map_err(|e| ReviewerError::Llm(e.to_string()))?;
 
-        data.content.into_iter()
+        data.content
+            .into_iter()
             .find(|c| c.kind == "text")
             .and_then(|c| c.text)
             .ok_or_else(|| ReviewerError::Llm("no text content in response".into()))
     }
 
-    fn model_name(&self) -> &str { &self.model }
+    fn model_name(&self) -> &str {
+        &self.model
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::{matchers::{method, path, header}, Mock, MockServer, ResponseTemplate};
+    use wiremock::{
+        matchers::{header, method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     #[tokio::test]
     async fn test_claude_complete_sends_correct_request() {
@@ -104,11 +120,9 @@ mod tests {
             .and(path("/v1/messages"))
             .and(header("x-api-key", "test-key"))
             .and(header("anthropic-version", "2023-06-01"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "content": [{"type": "text", "text": "review result"}]
-                }))
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "content": [{"type": "text", "text": "review result"}]
+            })))
             .mount(&mock_server)
             .await;
 

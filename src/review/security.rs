@@ -4,7 +4,7 @@ use crate::{
     error::Result,
     llm::LlmProvider,
     review::{
-        common::{extract_code, parse_llm_response},
+        common::{format_context_for_prompt, llm_review},
         context::{ReviewComment, ReviewContext},
     },
 };
@@ -25,10 +25,11 @@ impl<P: LlmProvider> SecurityReviewer<P> {
     }
 
     fn build_prompt(&self, ctx: &ReviewContext) -> String {
-        let code = extract_code(ctx);
+        let code = format_context_for_prompt(ctx);
         format!(
             r#"You are a security code reviewer. Analyze ONLY the code inside the <code> tags.
 Focus on: SQL injection, command injection, hardcoded secrets, insecure crypto, auth bypass, SSRF.
+Pay attention to how the changed code interacts with the related files shown for context.
 
 File: {path}
 Language: {lang:?}
@@ -54,8 +55,7 @@ impl<P: LlmProvider> Reviewer for SecurityReviewer<P> {
     }
 
     async fn review(&self, ctx: &ReviewContext) -> Result<Vec<ReviewComment>> {
-        let raw = self.llm.complete(&self.build_prompt(ctx)).await?;
-        parse_llm_response(&raw, &ctx.file_path)
+        llm_review(&self.llm, self.build_prompt(ctx), &ctx.file_path).await
     }
 }
 
@@ -64,7 +64,9 @@ mod tests {
     use super::*;
     use crate::{
         llm::MockLlmProvider,
-        review::context::{DiffHunk, DiffLine, DiffLineKind, Language, RepoInfo, ReviewContext, Severity},
+        review::context::{
+            DiffHunk, DiffLine, DiffLineKind, Language, RepoInfo, ReviewContext, Severity,
+        },
     };
 
     fn make_context(code: &str) -> ReviewContext {
@@ -85,6 +87,7 @@ mod tests {
                     content: code.into(),
                 }],
             }],
+            dep_snippets: vec![],
         }
     }
 
