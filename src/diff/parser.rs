@@ -15,19 +15,30 @@ pub fn parse_diff(diff: &str) -> Result<Vec<DiffHunk>> {
                 hunks.push(hunk);
             }
             // "@@ -old_start,old_count +new_start,new_count @@" 파싱
-            let start_line = parse_hunk_header(raw_line)
-                .ok_or_else(|| ReviewerError::DiffParse(format!("invalid hunk header: {raw_line}")))?;
+            let start_line = parse_hunk_header(raw_line).ok_or_else(|| {
+                ReviewerError::DiffParse(format!("invalid hunk header: {raw_line}"))
+            })?;
             current_line = start_line;
-            current_hunk = Some(DiffHunk { start_line, lines: Vec::new() });
+            current_hunk = Some(DiffHunk {
+                start_line,
+                lines: Vec::new(),
+            });
         } else if let Some(ref mut hunk) = current_hunk {
-            let (kind, content) = if raw_line.starts_with('+') {
-                (DiffLineKind::Added, raw_line[1..].to_string())
-            } else if raw_line.starts_with('-') {
-                (DiffLineKind::Removed, raw_line[1..].to_string())
+            let (kind, content) = if let Some(stripped) = raw_line.strip_prefix('+') {
+                (DiffLineKind::Added, stripped.to_string())
+            } else if let Some(stripped) = raw_line.strip_prefix('-') {
+                (DiffLineKind::Removed, stripped.to_string())
             } else {
-                (DiffLineKind::Context, raw_line.get(1..).unwrap_or(raw_line).to_string())
+                (
+                    DiffLineKind::Context,
+                    raw_line.get(1..).unwrap_or(raw_line).to_string(),
+                )
             };
-            hunk.lines.push(DiffLine { number: current_line, kind, content });
+            hunk.lines.push(DiffLine {
+                number: current_line,
+                kind,
+                content,
+            });
             current_line += 1;
         }
     }
@@ -61,7 +72,11 @@ mod tests {
         let hunks = parse_diff(diff).unwrap();
         assert_eq!(hunks.len(), 1);
         assert_eq!(hunks[0].start_line, 10);
-        let added: Vec<_> = hunks[0].lines.iter().filter(|l| l.kind == DiffLineKind::Added).collect();
+        let added: Vec<_> = hunks[0]
+            .lines
+            .iter()
+            .filter(|l| l.kind == DiffLineKind::Added)
+            .collect();
         assert_eq!(added.len(), 1);
         assert!(added[0].content.contains("token"));
     }
