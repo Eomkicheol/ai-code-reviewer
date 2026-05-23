@@ -1,0 +1,27 @@
+provider:
+  name: claude          # claude | openai | gemini
+  model: claude-sonnet-4-6
+
+reviewers:
+  security:
+    enabled: true
+    severity_threshold: warning   # info | warning | critical 이상만 코멘트
+    owasp_categories:
+      - injection
+      - auth
+      - crypto
+      - secrets
+  quality:
+    enabled: true
+    checks:
+      - naming
+      - complexity
+      - duplication
+
+ignore:
+  paths:
+    - "*.test.rs"
+    - "migrations/**"
+    - "vendor/**"
+    - ".github/**"
+  max_file_size_kb: 500
