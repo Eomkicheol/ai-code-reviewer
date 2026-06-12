@@ -1,6 +1,7 @@
 use crate::{
     config::ReviewConfig,
     error::{Result, ReviewerError},
+    github::GithubClient,
 };
 
 pub fn parse_config(yaml: &str) -> Result<ReviewConfig> {
@@ -17,32 +18,16 @@ pub fn parse_config(yaml: &str) -> Result<ReviewConfig> {
     serde_yaml::from_str(yaml).map_err(|e| ReviewerError::Config(e.to_string()))
 }
 
+/// 저장소의 .reviewbot.yml을 읽어 ReviewConfig를 반환한다.
+/// 파일이 없으면 기본값을 반환한다.
+/// GithubClient를 재사용하므로 별도 reqwest::Client 생성 및 SSRF 우회가 없다.
 pub async fn load_config_from_repo(
-    client: &reqwest::Client,
+    github_client: &GithubClient,
     owner: &str,
     repo: &str,
-    token: &str,
-    base_url: &str,
 ) -> Result<ReviewConfig> {
-    let url = format!("{base_url}/repos/{owner}/{repo}/contents/.reviewbot.yml");
-    let resp = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {token}"))
-        .header("Accept", "application/vnd.github.raw+json")
-        .header("User-Agent", "ai-code-reviewer/0.1")
-        .send()
-        .await
-        .map_err(|e| ReviewerError::GithubApi(e.to_string()))?;
-
-    if resp.status() == reqwest::StatusCode::NOT_FOUND {
-        return parse_config("");
-    }
-
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| ReviewerError::GithubApi(e.to_string()))?;
-    parse_config(&text)
+    let yaml = github_client.get_repo_config(owner, repo).await?;
+    parse_config(&yaml)
 }
 
 #[cfg(test)]
@@ -59,11 +44,8 @@ reviewers:
   security:
     enabled: true
     severity_threshold: warning
-    owasp_categories:
-      - injection
   quality:
     enabled: false
-    checks: []
 ignore:
   paths: []
   max_file_size_kb: 500

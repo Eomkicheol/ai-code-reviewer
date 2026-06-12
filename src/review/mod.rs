@@ -9,7 +9,19 @@ pub use context::{
     Severity,
 };
 pub use quality::QualityReviewer;
-pub use security::{Reviewer, SecurityReviewer};
+pub use security::SecurityReviewer;
+
+use async_trait::async_trait;
+
+/// 코드 리뷰어 추상화 trait — 의존 방향: review::mod (상위) → security/quality (하위)
+#[async_trait]
+pub trait Reviewer: Send + Sync {
+    fn name(&self) -> &str;
+    async fn review(
+        &self,
+        ctx: &context::ReviewContext,
+    ) -> crate::error::Result<Vec<context::ReviewComment>>;
+}
 
 use crate::error::Result;
 

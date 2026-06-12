@@ -6,14 +6,9 @@ use crate::{
     review::{
         common::{format_context_for_prompt, llm_review},
         context::{ReviewComment, ReviewContext},
+        Reviewer,
     },
 };
-
-#[async_trait]
-pub trait Reviewer: Send + Sync {
-    fn name(&self) -> &str;
-    async fn review(&self, ctx: &ReviewContext) -> Result<Vec<ReviewComment>>;
-}
 
 pub struct SecurityReviewer<P: LlmProvider> {
     llm: P,

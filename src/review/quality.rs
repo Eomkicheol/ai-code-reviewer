@@ -6,7 +6,7 @@ use crate::{
     review::{
         common::{format_context_for_prompt, llm_review},
         context::{ReviewComment, ReviewContext},
-        security::Reviewer,
+        Reviewer,
     },
 };
 

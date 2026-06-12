@@ -196,7 +196,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = GithubClient::new("test-token", &mock_server.uri());
+        let client = GithubClient::new("test-token", &mock_server.uri()).unwrap();
         let comment = PostedComment {
             path: "src/auth.rs".into(),
             line: 5,
@@ -219,7 +219,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = GithubClient::new("test-token", &mock_server.uri());
+        let client = GithubClient::new("test-token", &mock_server.uri()).unwrap();
         let comment = PostedComment {
             path: "src/auth.rs".into(),
             line: 5,

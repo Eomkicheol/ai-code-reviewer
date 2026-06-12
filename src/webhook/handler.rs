@@ -61,6 +61,7 @@ pub async fn handle_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
+    // 서명 검증
     let sig = match headers
         .get("X-Hub-Signature-256")
         .and_then(|v| v.to_str().ok())
@@ -79,241 +80,211 @@ pub async fn handle_webhook(
         .unwrap_or("");
 
     match event {
-        "pull_request" => {
-            // 페이로드 파싱
-            let payload: PrEventPayload = match serde_json::from_slice(&body) {
-                Ok(p) => p,
-                Err(e) => {
-                    tracing::error!("failed to parse PR payload: {e}");
-                    return StatusCode::BAD_REQUEST.into_response();
-                }
-            };
-
-            // opened / synchronize / reopened 만 처리
-            if !matches!(
-                payload.action.as_str(),
-                "opened" | "synchronize" | "reopened"
-            ) {
-                return StatusCode::OK.into_response();
-            }
-
-            // 파이프라인 비동기 실행 (Webhook 응답 즉시 반환)
-            let state_clone = state.clone();
-            tokio::spawn(async move {
-                if let Err(e) = run_review_pipeline(&state_clone, &payload, None).await {
-                    tracing::error!("review pipeline failed: {e}");
-                }
-            });
-
-            StatusCode::ACCEPTED.into_response()
-        }
-        "issue_comment" => {
-            use crate::webhook::comment_handler::{
-                parse_command, CommentCommand, IssueCommentPayload,
-            };
-
-            let payload: IssueCommentPayload = match serde_json::from_slice(&body) {
-                Ok(p) => p,
-                Err(e) => {
-                    tracing::error!("failed to parse issue_comment payload: {e}");
-                    return StatusCode::BAD_REQUEST.into_response();
-                }
-            };
-
-            // PR 댓글만 처리 (일반 issue 댓글 무시)
-            if payload.issue.pull_request.is_none() {
-                return StatusCode::OK.into_response();
-            }
-
-            // 봇 자신의 댓글 무시 (무한루프 방지)
-            if payload.comment.user.user_type == "Bot" {
-                return StatusCode::OK.into_response();
-            }
-
-            // created 이벤트만 처리
-            if payload.action != "created" {
-                return StatusCode::OK.into_response();
-            }
-
-            let cmd = parse_command(&payload.comment.body, "reviewer");
-            if cmd == CommentCommand::Unknown {
-                return StatusCode::OK.into_response();
-            }
-
-            // TargetedReview 타겟 문자열을 소유권 이전 전에 추출
-            let review_target: Option<String> = if let CommentCommand::TargetedReview(ref t) = cmd {
-                Some(t.clone())
-            } else {
-                None
-            };
-
-            let state_clone = state.clone();
-            tokio::spawn(async move {
-                let owner = &payload.repository.owner.login;
-                let repo = &payload.repository.name;
-                let pr_number = payload.issue.number;
-                let github_client = crate::github::GithubClient::new(
-                    &state_clone.github_token,
-                    &state_clone.github_api_url,
-                );
-
-                match cmd {
-                    CommentCommand::FullReview | CommentCommand::TargetedReview(_) => {
-                        if let Some(ref t) = review_target {
-                            tracing::info!("/review {t} 명령 수신: {owner}/{repo}#{pr_number}");
-                        } else {
-                            tracing::info!("/review 명령 수신: {owner}/{repo}#{pr_number}");
-                        }
-                        if let Err(e) = github_client
-                            .post_issue_comment(
-                                owner,
-                                repo,
-                                pr_number,
-                                "리뷰를 시작합니다. 잠시만 기다려주세요...",
-                            )
-                            .await
-                        {
-                            tracing::error!("리뷰 시작 댓글 게시 실패: {e}");
-                        }
-                        // 실제 리뷰 파이프라인 실행
-                        let pr_payload = PrEventPayload {
-                            action: "opened".to_string(),
-                            pull_request: PullRequest {
-                                number: pr_number,
-                                head: PrHead {
-                                    sha: fetch_pr_head_sha(&github_client, owner, repo, pr_number)
-                                        .await
-                                        .unwrap_or_default(),
-                                },
-                            },
-                            repository: payload.repository.clone(),
-                        };
-                        if let Err(e) =
-                            run_review_pipeline(&state_clone, &pr_payload, review_target.as_deref())
-                                .await
-                        {
-                            tracing::error!("/review 파이프라인 실패: {e}");
-                        }
-                    }
-                    CommentCommand::Question(question) => {
-                        tracing::info!(
-                            "@reviewer 질문 수신 {owner}/{repo}#{pr_number}: {question}"
-                        );
-                        use crate::{
-                            config::loader::load_config_from_repo,
-                            llm::{
-                                claude::ClaudeProvider, gemini::GeminiProvider,
-                                openai::OpenAiProvider,
-                            },
-                        };
-                        let http_client = reqwest::Client::new();
-                        let config = match load_config_from_repo(
-                            &http_client,
-                            owner,
-                            repo,
-                            &state_clone.github_token,
-                            &state_clone.github_api_url,
-                        )
-                        .await
-                        {
-                            Ok(c) => c,
-                            Err(e) => {
-                                tracing::error!("질문 핸들러 설정 로드 실패: {e}");
-                                return;
-                            }
-                        };
-                        let model = config.provider.model.clone();
-                        let answer_result = match config.provider.name.as_str() {
-                            "openai" => {
-                                crate::webhook::comment_handler::handle_question(
-                                    &OpenAiProvider::from_env(model),
-                                    &question,
-                                    owner,
-                                    repo,
-                                    pr_number,
-                                    &github_client,
-                                )
-                                .await
-                            }
-                            "gemini" => {
-                                crate::webhook::comment_handler::handle_question(
-                                    &GeminiProvider::from_env(model),
-                                    &question,
-                                    owner,
-                                    repo,
-                                    pr_number,
-                                    &github_client,
-                                )
-                                .await
-                            }
-                            _ => {
-                                crate::webhook::comment_handler::handle_question(
-                                    &ClaudeProvider::from_env(model),
-                                    &question,
-                                    owner,
-                                    repo,
-                                    pr_number,
-                                    &github_client,
-                                )
-                                .await
-                            }
-                        };
-                        match answer_result {
-                            Ok(answer) => {
-                                let body =
-                                    format!("> {question}\n\n{answer}\n\n*AI Code Reviewer*");
-                                if let Err(e) = github_client
-                                    .post_issue_comment(owner, repo, pr_number, &body)
-                                    .await
-                                {
-                                    tracing::error!("질문 답변 게시 실패: {e}");
-                                }
-                            }
-                            Err(e) => tracing::error!("질문 답변 생성 실패: {e}"),
-                        }
-                    }
-                    CommentCommand::Unknown => {}
-                }
-            });
-
-            StatusCode::ACCEPTED.into_response()
-        }
+        "pull_request" => handle_pull_request_event(state, body),
+        "issue_comment" => handle_issue_comment_event(state, body),
         _ => StatusCode::OK.into_response(),
     }
 }
 
-async fn fetch_pr_head_sha(
-    client: &crate::github::GithubClient,
+/// pull_request 이벤트 처리 — opened/synchronize/reopened 시 리뷰 파이프라인 실행
+fn handle_pull_request_event(state: Arc<AppState>, body: Bytes) -> axum::response::Response {
+    let payload: PrEventPayload = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!("failed to parse PR payload: {e}");
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+    };
+
+    // opened / synchronize / reopened 만 처리
+    if !matches!(
+        payload.action.as_str(),
+        "opened" | "synchronize" | "reopened"
+    ) {
+        return StatusCode::OK.into_response();
+    }
+
+    // 파이프라인 비동기 실행 (Webhook 응답 즉시 반환)
+    tokio::spawn(async move {
+        if let Err(e) = run_review_pipeline(&state, &payload, None).await {
+            tracing::error!("review pipeline failed: {e}");
+        }
+    });
+
+    StatusCode::ACCEPTED.into_response()
+}
+
+/// issue_comment 이벤트 처리 — PR 댓글 명령(/review, @reviewer) 처리
+fn handle_issue_comment_event(state: Arc<AppState>, body: Bytes) -> axum::response::Response {
+    use crate::webhook::comment_handler::{parse_command, CommentCommand, IssueCommentPayload};
+
+    let payload: IssueCommentPayload = match serde_json::from_slice(&body) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!("failed to parse issue_comment payload: {e}");
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+    };
+
+    // PR 댓글만 처리 (일반 issue 댓글 무시)
+    if payload.issue.pull_request.is_none() {
+        return StatusCode::OK.into_response();
+    }
+
+    // 봇 자신의 댓글 무시 (무한루프 방지)
+    if payload.comment.user.user_type == "Bot" {
+        return StatusCode::OK.into_response();
+    }
+
+    // created 이벤트만 처리
+    if payload.action != "created" {
+        return StatusCode::OK.into_response();
+    }
+
+    let cmd = parse_command(&payload.comment.body, "reviewer");
+    if cmd == CommentCommand::Unknown {
+        return StatusCode::OK.into_response();
+    }
+
+    // TargetedReview 타겟 문자열을 소유권 이전 전에 추출
+    let review_target: Option<String> = if let CommentCommand::TargetedReview(ref t) = cmd {
+        Some(t.clone())
+    } else {
+        None
+    };
+
+    tokio::spawn(async move {
+        let owner = &payload.repository.owner.login;
+        let repo = &payload.repository.name;
+        let pr_number = payload.issue.number;
+        let github_client =
+            match crate::github::GithubClient::new(&state.github_token, &state.github_api_url) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("GithubClient 생성 실패: {e}");
+                    return;
+                }
+            };
+
+        match cmd {
+            CommentCommand::FullReview | CommentCommand::TargetedReview(_) => {
+                dispatch_review_command(
+                    &state,
+                    &github_client,
+                    owner,
+                    repo,
+                    pr_number,
+                    review_target.as_deref(),
+                    payload.repository.clone(),
+                )
+                .await
+            }
+            CommentCommand::Question(question) => {
+                dispatch_question_command(&github_client, owner, repo, pr_number, &question).await
+            }
+            CommentCommand::Unknown => {}
+        }
+    });
+
+    StatusCode::ACCEPTED.into_response()
+}
+
+/// /review 명령 처리 — PR head SHA 조회 후 리뷰 파이프라인 실행
+async fn dispatch_review_command(
+    state: &AppState,
+    github_client: &crate::github::GithubClient,
     owner: &str,
     repo: &str,
     pr_number: u64,
-) -> crate::error::Result<String> {
-    use serde::Deserialize;
-    #[derive(Deserialize)]
-    struct PrInfo {
-        head: HeadInfo,
-    }
-    #[derive(Deserialize)]
-    struct HeadInfo {
-        sha: String,
+    review_target: Option<&str>,
+    repository: Repository,
+) {
+    if let Some(t) = review_target {
+        tracing::info!("/review {t} 명령 수신: {owner}/{repo}#{pr_number}");
+    } else {
+        tracing::info!("/review 명령 수신: {owner}/{repo}#{pr_number}");
     }
 
-    let url = format!("{}/repos/{owner}/{repo}/pulls/{pr_number}", client.base_url);
-    let resp = client
-        .client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", client.token))
-        .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "ai-code-reviewer/0.1")
-        .send()
+    if let Err(e) = github_client
+        .post_issue_comment(
+            owner,
+            repo,
+            pr_number,
+            "리뷰를 시작합니다. 잠시만 기다려주세요...",
+        )
         .await
-        .map_err(|e| crate::error::ReviewerError::GithubApi(e.to_string()))?;
+    {
+        tracing::error!("리뷰 시작 댓글 게시 실패: {e}");
+    }
 
-    let info: PrInfo = resp
-        .json()
-        .await
-        .map_err(|e| crate::error::ReviewerError::GithubApi(e.to_string()))?;
-    Ok(info.head.sha)
+    // SHA 조회 실패 시 빈 문자열로 진행하지 않고 중단
+    let head_sha = match github_client.get_pr_head_sha(owner, repo, pr_number).await {
+        Ok(sha) => sha,
+        Err(e) => {
+            tracing::error!("PR head SHA 조회 실패, 리뷰 중단: {e}");
+            return;
+        }
+    };
+
+    let pr_payload = PrEventPayload {
+        action: "opened".to_string(),
+        pull_request: PullRequest {
+            number: pr_number,
+            head: PrHead { sha: head_sha },
+        },
+        repository,
+    };
+
+    if let Err(e) = run_review_pipeline(state, &pr_payload, review_target).await {
+        tracing::error!("/review 파이프라인 실패: {e}");
+    }
+}
+
+/// @reviewer 질문 명령 처리 — LLM으로 질문 답변 후 댓글 게시
+/// github_client를 재사용하므로 별도 AppState 파라미터 불필요
+async fn dispatch_question_command(
+    github_client: &crate::github::GithubClient,
+    owner: &str,
+    repo: &str,
+    pr_number: u64,
+    question: &str,
+) {
+    tracing::info!("@reviewer 질문 수신 {owner}/{repo}#{pr_number}: {question}");
+
+    use crate::config::loader::load_config_from_repo;
+    // 이미 생성된 github_client 재사용 — 별도 reqwest::Client 생성 불필요
+    let config = match load_config_from_repo(github_client, owner, repo).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("질문 핸들러 설정 로드 실패: {e}");
+            return;
+        }
+    };
+
+    // provider factory로 LLM 생성
+    let llm = crate::llm::create_provider(&config.provider.name, config.provider.model.clone());
+    let answer_result = crate::webhook::comment_handler::handle_question(
+        &llm,
+        question,
+        owner,
+        repo,
+        pr_number,
+        github_client,
+    )
+    .await;
+
+    match answer_result {
+        Ok(answer) => {
+            let body = format!("> {question}\n\n{answer}\n\n*AI Code Reviewer*");
+            if let Err(e) = github_client
+                .post_issue_comment(owner, repo, pr_number, &body)
+                .await
+            {
+                tracing::error!("질문 답변 게시 실패: {e}");
+            }
+        }
+        Err(e) => tracing::error!("질문 답변 생성 실패: {e}"),
+    }
 }
 
 async fn run_review_pipeline(
@@ -326,7 +297,6 @@ async fn run_review_pipeline(
         context::ContextStore,
         diff::fetcher::fetch_review_contexts,
         github::GithubClient,
-        llm::{claude::ClaudeProvider, gemini::GeminiProvider, openai::OpenAiProvider},
         review::{summary::generate_pr_summary, QualityReviewer, ReviewEngine, SecurityReviewer},
     };
 
@@ -336,16 +306,9 @@ async fn run_review_pipeline(
     let commit_sha = &payload.pull_request.head.sha;
     let repo_key = format!("{owner}/{repo}");
 
-    let github_client = GithubClient::new(&state.github_token, &state.github_api_url);
-    let http_client = reqwest::Client::new();
-    let config = load_config_from_repo(
-        &http_client,
-        owner,
-        repo,
-        &state.github_token,
-        &state.github_api_url,
-    )
-    .await?;
+    let github_client = GithubClient::new(&state.github_token, &state.github_api_url)?;
+    // github_client 재사용 — 별도 reqwest::Client 생성 및 SSRF 우회 없음
+    let config = load_config_from_repo(&github_client, owner, repo).await?;
 
     // 컨텍스트 스토어 초기화 — DB 실패는 non-fatal (리뷰 자체는 계속 진행)
     let db_path = std::env::var("DB_PATH").unwrap_or_else(|_| "reviewer.db".to_string());
@@ -406,75 +369,24 @@ async fn run_review_pipeline(
         let security_enabled = config.reviewers.security.enabled && run_security;
         let quality_enabled = config.reviewers.quality.enabled && run_quality;
 
-        // config.reviewers.*.enabled 반영: 비활성화된 리뷰어는 MockLlmProvider로 대체
-        let comments = match config.provider.name.as_str() {
-            "openai" => {
-                ReviewEngine::new(
-                    if security_enabled {
-                        Box::new(SecurityReviewer::new(OpenAiProvider::from_env(
-                            model.clone(),
-                        ))) as Box<dyn crate::review::security::Reviewer>
-                    } else {
-                        Box::new(SecurityReviewer::new(crate::llm::MockLlmProvider::new(
-                            "[]",
-                        )))
-                    },
-                    if quality_enabled {
-                        Box::new(QualityReviewer::new(OpenAiProvider::from_env(
-                            model.clone(),
-                        ))) as Box<dyn crate::review::security::Reviewer>
-                    } else {
-                        Box::new(QualityReviewer::new(crate::llm::MockLlmProvider::new("[]")))
-                    },
-                )
-                .run(ctx)
-                .await?
-            }
-            "gemini" => {
-                ReviewEngine::new(
-                    if security_enabled {
-                        Box::new(SecurityReviewer::new(GeminiProvider::from_env(
-                            model.clone(),
-                        ))) as Box<dyn crate::review::security::Reviewer>
-                    } else {
-                        Box::new(SecurityReviewer::new(crate::llm::MockLlmProvider::new(
-                            "[]",
-                        )))
-                    },
-                    if quality_enabled {
-                        Box::new(QualityReviewer::new(GeminiProvider::from_env(
-                            model.clone(),
-                        ))) as Box<dyn crate::review::security::Reviewer>
-                    } else {
-                        Box::new(QualityReviewer::new(crate::llm::MockLlmProvider::new("[]")))
-                    },
-                )
-                .run(ctx)
-                .await?
-            }
-            _ => {
-                ReviewEngine::new(
-                    if security_enabled {
-                        Box::new(SecurityReviewer::new(ClaudeProvider::from_env(
-                            model.clone(),
-                        ))) as Box<dyn crate::review::security::Reviewer>
-                    } else {
-                        Box::new(SecurityReviewer::new(crate::llm::MockLlmProvider::new(
-                            "[]",
-                        )))
-                    },
-                    if quality_enabled {
-                        Box::new(QualityReviewer::new(ClaudeProvider::from_env(
-                            model.clone(),
-                        ))) as Box<dyn crate::review::security::Reviewer>
-                    } else {
-                        Box::new(QualityReviewer::new(crate::llm::MockLlmProvider::new("[]")))
-                    },
-                )
-                .run(ctx)
-                .await?
-            }
+        // provider factory로 3중 match 제거
+        // 비활성 리뷰어는 MockLlmProvider("[]")로 대체하여 빈 결과 반환
+        let security_llm: Box<dyn crate::llm::LlmProvider + Send + Sync> = if security_enabled {
+            crate::llm::create_provider(&config.provider.name, model.clone())
+        } else {
+            Box::new(crate::llm::MockLlmProvider::new("[]"))
         };
+        let quality_llm: Box<dyn crate::llm::LlmProvider + Send + Sync> = if quality_enabled {
+            crate::llm::create_provider(&config.provider.name, model.clone())
+        } else {
+            Box::new(crate::llm::MockLlmProvider::new("[]"))
+        };
+        let comments = ReviewEngine::new(
+            Box::new(SecurityReviewer::new(security_llm)),
+            Box::new(QualityReviewer::new(quality_llm)),
+        )
+        .run(ctx)
+        .await?;
 
         // severity_threshold 필터 적용
         let sec_threshold = &config.reviewers.security.severity_threshold;
@@ -515,38 +427,16 @@ async fn run_review_pipeline(
         all_comments.extend(comments);
     }
 
-    let summary = match config.provider.name.as_str() {
-        "openai" => {
-            generate_pr_summary(
-                &OpenAiProvider::from_env(model.clone()),
-                &all_comments,
-                &repo_key,
-                pr_number,
-                &pattern_hint,
-            )
-            .await?
-        }
-        "gemini" => {
-            generate_pr_summary(
-                &GeminiProvider::from_env(model.clone()),
-                &all_comments,
-                &repo_key,
-                pr_number,
-                &pattern_hint,
-            )
-            .await?
-        }
-        _ => {
-            generate_pr_summary(
-                &ClaudeProvider::from_env(model.clone()),
-                &all_comments,
-                &repo_key,
-                pr_number,
-                &pattern_hint,
-            )
-            .await?
-        }
-    };
+    // provider factory로 3중 match 제거
+    let summary_llm = crate::llm::create_provider(&config.provider.name, model.clone());
+    let summary = generate_pr_summary(
+        &summary_llm,
+        &all_comments,
+        &repo_key,
+        pr_number,
+        &pattern_hint,
+    )
+    .await?;
     github_client
         .create_pr_review(owner, repo, pr_number, commit_sha, &summary)
         .await?;
