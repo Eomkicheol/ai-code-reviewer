@@ -33,26 +33,18 @@ pub async fn generate_pr_summary<P: LlmProvider>(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let critical = comments
-        .iter()
-        .filter(|c| c.severity == Severity::Critical)
-        .count();
-    let warning = comments
-        .iter()
-        .filter(|c| c.severity == Severity::Warning)
-        .count();
-    let info = comments
-        .iter()
-        .filter(|c| c.severity == Severity::Info)
-        .count();
-    let security = comments
-        .iter()
-        .filter(|c| c.category == Category::Security)
-        .count();
-    let quality = comments
-        .iter()
-        .filter(|c| c.category == Category::Quality)
-        .count();
+    // 단일 순회로 심각도·카테고리 집계
+    let (critical, warning, info, security, quality) = comments.iter().fold(
+        (0usize, 0usize, 0usize, 0usize, 0usize),
+        |(crit, warn, inf, sec, qual), c| {
+            let crit = crit + (c.severity == Severity::Critical) as usize;
+            let warn = warn + (c.severity == Severity::Warning) as usize;
+            let inf = inf + (c.severity == Severity::Info) as usize;
+            let sec = sec + (c.category == Category::Security) as usize;
+            let qual = qual + (c.category == Category::Quality) as usize;
+            (crit, warn, inf, sec, qual)
+        },
+    );
 
     let pattern_section = if pattern_hint.is_empty() {
         String::new()
@@ -76,6 +68,7 @@ Be direct and actionable. Keep it under 200 words."#
 
     let llm_summary = llm.complete(&prompt).await?;
 
+    // 단일 순회로 checklist 생성 (critical/warning/info/security/quality 집계는 위에서 완료)
     let checklist = comments
         .iter()
         .filter(|c| c.severity != Severity::Info)
