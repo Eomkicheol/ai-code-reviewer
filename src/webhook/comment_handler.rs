@@ -11,14 +11,13 @@ pub struct IssueCommentPayload {
 
 #[derive(Deserialize, Debug)]
 pub struct IssueComment {
-    pub id: u64,
     pub body: String,
     pub user: CommentUser,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct CommentUser {
-    pub login: String,
+    // user_type만 봇 여부 판별에 사용 (login, id는 불필요)
     #[serde(rename = "type")]
     pub user_type: String,
 }

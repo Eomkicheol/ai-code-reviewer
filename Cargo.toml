@@ -24,14 +24,13 @@ sha2 = "0.10"
 hex = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tower = { version = "0.4", features = ["util"] }
 async-trait = "0.1"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 wiremock = "0.6"
-tokio-test = "0.4"
+tower = { version = "0.4", features = ["util"] }
 
 [[test]]
 name = "integration"

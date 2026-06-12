@@ -31,8 +31,6 @@ pub struct SecurityReviewerConfig {
     pub enabled: bool,
     #[serde(default = "default_warning")]
     pub severity_threshold: String,
-    #[serde(default = "default_owasp")]
-    pub owasp_categories: Vec<String>,
 }
 
 impl Default for SecurityReviewerConfig {
@@ -40,7 +38,6 @@ impl Default for SecurityReviewerConfig {
         Self {
             enabled: true,
             severity_threshold: "warning".to_string(),
-            owasp_categories: default_owasp(),
         }
     }
 }
@@ -51,8 +48,6 @@ pub struct QualityReviewerConfig {
     pub enabled: bool,
     #[serde(default = "default_warning")]
     pub severity_threshold: String,
-    #[serde(default = "default_checks")]
-    pub checks: Vec<String>,
 }
 
 impl Default for QualityReviewerConfig {
@@ -60,7 +55,6 @@ impl Default for QualityReviewerConfig {
         Self {
             enabled: true,
             severity_threshold: "warning".to_string(),
-            checks: default_checks(),
         }
     }
 }
@@ -87,17 +81,6 @@ fn default_true() -> bool {
 }
 fn default_warning() -> String {
     "warning".to_string()
-}
-fn default_owasp() -> Vec<String> {
-    vec![
-        "injection".into(),
-        "auth".into(),
-        "crypto".into(),
-        "secrets".into(),
-    ]
-}
-fn default_checks() -> Vec<String> {
-    vec!["naming".into(), "complexity".into(), "duplication".into()]
 }
 fn default_max_file_size() -> u64 {
     500

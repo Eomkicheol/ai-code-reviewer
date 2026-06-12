@@ -93,17 +93,8 @@ reviewers:
   security:
     enabled: true
     severity_threshold: warning   # info | warning | critical 이상만 코멘트
-    owasp_categories:
-      - injection      # SQL/명령어 인젝션
-      - auth           # 인증/인가 취약점
-      - crypto         # 취약한 암호화
-      - secrets        # 하드코딩 시크릿
   quality:
     enabled: true
-    checks:
-      - naming         # 네이밍 규칙
-      - complexity     # 함수 복잡도
-      - duplication    # 코드 중복
 
 ignore:
   paths:
