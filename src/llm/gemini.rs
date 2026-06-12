@@ -70,9 +70,10 @@ struct GeminiResponsePart {
 #[async_trait]
 impl LlmProvider for GeminiProvider {
     async fn complete(&self, prompt: &str) -> Result<String> {
+        // API 키를 URL 쿼리 파라미터가 아닌 헤더로 전달 (로그/프록시 노출 방지)
         let url = format!(
-            "{}/v1beta/models/{}:generateContent?key={}",
-            self.base_url, self.model, self.api_key
+            "{}/v1beta/models/{}:generateContent",
+            self.base_url, self.model
         );
         let body = GeminiRequest {
             contents: vec![GeminiContent {
@@ -84,6 +85,7 @@ impl LlmProvider for GeminiProvider {
             .client
             .post(&url)
             .header("Content-Type", "application/json")
+            .header("x-goog-api-key", &self.api_key)
             .json(&body)
             .send()
             .await
@@ -91,7 +93,7 @@ impl LlmProvider for GeminiProvider {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
+            let text = crate::llm::truncate_api_error(resp.text().await.unwrap_or_default());
             return Err(ReviewerError::Llm(format!("Gemini API {status}: {text}")));
         }
 

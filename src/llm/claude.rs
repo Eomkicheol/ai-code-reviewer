@@ -83,7 +83,7 @@ impl LlmProvider for ClaudeProvider {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
+            let text = crate::llm::truncate_api_error(resp.text().await.unwrap_or_default());
             return Err(ReviewerError::Llm(format!("Claude API {status}: {text}")));
         }
 
