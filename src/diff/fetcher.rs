@@ -207,7 +207,7 @@ mod fetcher_tests {
     #[test]
     fn test_glob_star_matches_within_segment() {
         assert!(glob_match("*.test.rs", "foo.test.rs"));
-        assert_eq!(glob_match("*.test.rs", "src/foo.test.rs"), false); // * 는 / 불포함
+        assert!(!glob_match("*.test.rs", "src/foo.test.rs")); // * 는 / 불포함
     }
 
     #[test]

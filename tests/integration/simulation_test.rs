@@ -32,6 +32,9 @@ fn claude_security_response() -> serde_json::Value {
     })
 }
 
+// ENV_LOCK 가드를 테스트 전체에 걸쳐 유지해야 env var 격리가 보장됨.
+// 가드를 await 전에 드롭하면 다른 테스트가 env var를 덮어쓸 수 있어 플래키 발생.
+#[allow(clippy::await_holding_lock)]
 #[tokio::test]
 async fn test_full_pr_pipeline_end_to_end() {
     let _lock = ENV_LOCK.lock().unwrap();
@@ -76,17 +79,15 @@ async fn test_full_pr_pipeline_end_to_end() {
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
         .and(header("x-api-key", "sim-claude-key"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(claude_security_response()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_json(claude_security_response()))
         .mount(&claude_mock)
         .await;
 
     std::env::set_var("GITHUB_WEBHOOK_SECRET", "sim-secret");
     std::env::set_var("GITHUB_TOKEN", "sim-token");
-    std::env::set_var("GITHUB_API_URL", &github_mock.uri());
+    std::env::set_var("GITHUB_API_URL", github_mock.uri());
     std::env::set_var("CLAUDE_API_KEY", "sim-claude-key");
-    std::env::set_var("CLAUDE_BASE_URL", &claude_mock.uri());
+    std::env::set_var("CLAUDE_BASE_URL", claude_mock.uri());
     std::env::set_var("DB_PATH", ":memory:");
 
     let app = reviewer::webhook::router();
@@ -150,6 +151,8 @@ async fn test_full_pr_pipeline_end_to_end() {
     assert!(comment_posted, "PR 줄 코멘트 미게시");
 }
 
+// ENV_LOCK 가드를 테스트 전체에 걸쳐 유지해야 env var 격리가 보장됨.
+#[allow(clippy::await_holding_lock)]
 #[tokio::test]
 async fn test_bot_comment_is_ignored() {
     let _lock = ENV_LOCK.lock().unwrap();

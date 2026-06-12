@@ -32,6 +32,10 @@ mod tests {
     #[test]
     fn test_result_type_alias() {
         let ok: Result<i32> = Ok(42);
-        assert_eq!(ok.unwrap(), 42);
+        // unwrap()을 피해 직접 값 추출로 비교
+        let Ok(val) = ok else {
+            panic!("expected Ok");
+        };
+        assert_eq!(val, 42);
     }
 }
